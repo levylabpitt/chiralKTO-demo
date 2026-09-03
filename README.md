@@ -1,7 +1,7 @@
 # Chirality in KTaO₃
 
-Drive a wire forward, drive it reverse, see whether the bias asymmetry flips
-sign. One wire, two directions. Multiple wires supported.
+Drive a wire left → right, drive it right → left, see whether the bias
+asymmetry flips sign.
 
 ```bash
 .\demo.ps1
@@ -13,15 +13,14 @@ First run downloads deps via `uv` (~30s). Do that before the demo.
 
 ## The flow
 
-1. **Setup** — session folder, number of wires. Each wire: label, current
-   left/right (AO channels), voltage left/right (AI channels). Folder = label.
-2. **Measure** — pick a wire, hit **Run IV sweep**. Runs left → right, then
-   right → left, on its own — status shows which phase is running.
+1. **Setup** — session folder, wire label, current left/right (AO channels),
+   voltage left/right (AI channels). Folder = label. Moving to a new wire is
+   just retyping the label.
+2. **Measure** — pick a direction, hit **Run IV sweep**. One sweep per click.
 3. **Sweeps / Analysis** — updates on its own.
-4. **All wires** — one row per wire, so you can compare across them.
 
-Money shot is the asymmetry plot: dashed = −A driving reverse. A chiral wire
-flips sign; an achiral one sits near zero either way.
+Money shot is the asymmetry plot: dashed = −A driving right → left. A chiral
+wire flips sign; an achiral one sits near zero either way.
 
 ---
 
@@ -30,18 +29,16 @@ flips sign; an achiral one sits near zero either way.
 [`instrument.py`](instrument.py) wraps `CESession`/`LockinSweep`, same as
 [`examples/Lockin_sweep.py`](examples/Lockin_sweep.py). `flex` is imported
 lazily — the notebook still opens without it, status line up top says which
-state you're in. **Rehearsal** in Measure writes synthetic data instead.
+state you're in.
 
-Each direction pins the *other* current lead at 0V explicitly (a second entry
-in `sweepChannels`), not left floating.
+Whichever side isn't driving gets pinned at 0V explicitly (a second entry in
+`sweepChannels`), not left floating.
 
 ## Data
 
-One sweep, one `.tdms`, one file per repeat, in `<wire>/forward/` (left→right)
-or `<wire>/reverse/` (right→left). Voltage left/right are per wire — different
-wires can sit on different AI channels. The current-sense channel (default
-`AI4`) and current gain are global, set once in Setup. Bad files show up under
-*Unreadable*, nothing else stops.
+One sweep, one `.tdms`, in `<wire>/forward/` (left→right) or `<wire>/reverse/`
+(right→left). Current-sense channel (default `AI4`), current gain, and 2T/4T
+are global. Bad files show up under *Unreadable*, nothing else stops.
 
 ---
 
@@ -68,7 +65,8 @@ Also: mean IV ±1 SD, log |I|, dI/dV. Export writes CSVs to
 
 19 checks against synthetic data with a known asymmetry — round-tripped
 through TDMS, forward/reverse mirroring, an achiral wire near zero, a weak
-partner scoring partial not perfect. Run after touching `analysis.py`.
+partner scoring partial not perfect. Uses `chiral_kto/simulate.py`, which
+isn't wired into the notebook itself. Run after touching `analysis.py`.
 
 ---
 
@@ -81,7 +79,7 @@ selftest.py             19 checks, no instrument needed
 chiral_kto/
   ivio.py               read TDMS
   analysis.py           branches, asymmetry, dI/dV, mirror test
-  simulate.py           synthetic chiral sweeps as TDMS
+  simulate.py           synthetic chiral sweeps as TDMS, for selftest.py
 examples/               original script this was built from
 demo.ps1               launcher: no arg = edit, `present`, `test`
 ```
@@ -90,5 +88,4 @@ demo.ps1               launcher: no arg = edit, `present`, `test`
 
 - Cell goes red — everything below stops, rest is fine. Fix, it re-runs.
 - Sweep throws — run from FLEX directly, hit **Reload**.
-- Instrument unreachable — flip **rehearsal**, keep talking.
-- Curves look off — check which current lead is left vs right for that wire.
+- Curves look off — check which current lead is left vs right.
