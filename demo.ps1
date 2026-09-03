@@ -17,7 +17,8 @@ $deps = @(
     "--with", "altair",
     "--with", "scipy",
     "--with", "pyarrow",
-    "--with", "npTDMS"
+    "--with", "npTDMS",
+    "--with", "ipython"
 )
 
 switch ($Mode) {

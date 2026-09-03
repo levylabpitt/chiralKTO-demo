@@ -8,6 +8,7 @@
 #     "scipy",
 #     "pyarrow",
 #     "npTDMS",
+#     "ipython",
 # ]
 # ///
 """Chirality in KTO: sweep one structure, sweep its mirror image, compare."""
