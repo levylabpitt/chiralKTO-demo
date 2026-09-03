@@ -37,8 +37,10 @@ Whichever side isn't driving gets pinned at 0V explicitly (a second entry in
 ## Data
 
 One sweep, one `.tdms`, in `<wire>/forward/` (left→right) or `<wire>/reverse/`
-(right→left). Current-sense channel (default `AI4`), current gain, and 2T/4T
-are global. Bad files show up under *Unreadable*, nothing else stops.
+(right→left). No separate current-sense field — current is read from whichever
+side isn't driving (right's AI channel going left→right, left's going
+right→left), same numbers as Current left/right in Setup. Current gain and
+2T/4T are global. Bad files show up under *Unreadable*, nothing else stops.
 
 ---
 

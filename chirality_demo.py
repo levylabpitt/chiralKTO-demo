@@ -96,15 +96,13 @@ def _(make_browser, session_dir):
 @app.cell
 def _(mo):
     wire_label = mo.ui.text("wire1", label="Wire label")
-    cur_left = mo.ui.number(1, 32, 1, value=1, label="Current left (AO)")
-    cur_right = mo.ui.number(1, 32, 1, value=2, label="Current right (AO)")
+    cur_left = mo.ui.number(1, 32, 1, value=1, label="Current left")
+    cur_right = mo.ui.number(1, 32, 1, value=2, label="Current right")
     volt_left = mo.ui.text("AI3", label="Voltage left")
     volt_right = mo.ui.text("AI5", label="Voltage right")
-    ch_current = mo.ui.text("AI4", label="current sense")
     signal_mode = mo.ui.radio(options=["4T", "2T"], value="4T", inline=True, label="Leads")
     current_gain = mo.ui.number(1e-9, 1e9, value=1.0, label="Current gain (A/raw)")
     return (
-        ch_current,
         cur_left,
         cur_right,
         current_gain,
@@ -119,7 +117,6 @@ def _(mo):
 def _(
     Path,
     browse,
-    ch_current,
     cur_left,
     cur_right,
     current_gain,
@@ -149,7 +146,11 @@ def _(
             mo.accordion({"Browse…": browse}) if browse is not None else mo.md(""),
             wire_label,
             mo.hstack([cur_left, cur_right, volt_left, volt_right], justify="start", gap=1, wrap=True),
-            mo.hstack([ch_current, signal_mode, current_gain], justify="start", gap=2),
+            mo.hstack([signal_mode, current_gain], justify="start", gap=2),
+            mo.md(
+                f"current is sensed on whichever side isn't driving — right's "
+                f"channel when going left → right, left's when going right → left"
+            ),
             mo.md(f"`{wire_dir}` — left → right: {n_f} · right → left: {n_r}"),
         ]
     )
@@ -295,7 +296,6 @@ def _(
 @app.cell
 def _(
     DIRECTIONS,
-    ch_current,
     cur_left,
     cur_right,
     current_gain,
@@ -312,7 +312,9 @@ def _(
     reload_btn.value, run_status  # reload triggers
 
     _dirs = {"forward": fwd_dir, "reverse": rev_dir}
+    # whichever side isn't driving is where the return current is sensed
     _drives = {"forward": cur_left.value, "reverse": cur_right.value}
+    _senses = {"forward": cur_right.value, "reverse": cur_left.value}
     sweeps = {}
     problems = []
     for _d in DIRECTIONS:
@@ -321,7 +323,7 @@ def _(
             mode=signal_mode.value,
             channels={
                 "drive": f"AO{_drives[_d]}",
-                "current": ch_current.value,
+                "current": f"AI{_senses[_d]}",
                 "v_plus": volt_left.value,
                 "v_minus": volt_right.value,
             },
