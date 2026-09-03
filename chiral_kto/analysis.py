@@ -258,13 +258,13 @@ def analyse_slot(
 
 @dataclass
 class MirrorTest:
-    """Does structure B behave like the enantiomer of structure A?"""
+    """Does driving reverse flip the asymmetry seen driving forward?"""
 
     mirror_score: float      # 1 - ||A_A + A_B|| / (||A_A|| + ||A_B||), in [0, 1]
     contrast: float          # <A_A - A_B> over the evaluation window
     contrast_err: float
     t_stat: float
-    noise_floor: float       # |<A>| of the achiral control, if provided
+    noise_floor: float       # |<A>| of a control slot, if one was given
     a_values: dict[str, tuple[float, float, int]]
     v_window: tuple[float, float]
 
@@ -282,10 +282,10 @@ class MirrorTest:
         if not self.significant:
             return "no significant chiral contrast yet"
         if self.mirror_score > 0.7:
-            return "mirrored asymmetry - consistent with an enantiomer pair"
+            return "reverse mirrors forward - consistent with a chiral wire"
         if self.mirror_score > 0.4:
             return "partial mirroring - contrast is real, symmetry is imperfect"
-        return "structures differ, but not as mirror images"
+        return "contrast is real, but reverse doesn't mirror forward"
 
 
 def _mirror_score(a: np.ndarray, b: np.ndarray) -> float:

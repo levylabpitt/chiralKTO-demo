@@ -4,12 +4,14 @@ Same format the transport server produces, so the loader and the analysis take
 exactly the same path whether the data came from the instrument or from here.
 Two uses: rehearse before the demo, and keep going if the hardware is down.
 
-The model is a tunnelling backbone times a handedness-dependent bias asymmetry,
-so the analysis has a known right answer:
+One wire, driven from each end in turn (forward / reverse), is the whole
+experiment now. The model is a tunnelling backbone times a direction-dependent
+bias asymmetry, so the analysis has a known right answer:
 
     I(V) = I0 * sinh(V/Vt) * (1 + h*beta*tanh(V/Vs))  ->  A(V) = h*beta*tanh(V/Vs)
 
-h = +1 / -1 for the two enantiomers, 0 for an achiral control.
+h = +chirality driving forward, -chirality driving reverse. chirality = 0 makes
+an achiral wire - no contrast either way.
 """
 
 from __future__ import annotations
@@ -21,11 +23,9 @@ from nptdms import ChannelObject, TdmsWriter
 
 from .ivio import DEFAULT_CHANNELS
 
-HANDEDNESS = {"CW": +1.0, "CCW": -1.0, "control": 0.0}
-
 
 def simulate_sweep(
-    handedness: float | str = +1.0,
+    handedness: float = +1.0,
     *,
     v_max: float = 0.1,
     n_points: int = 201,
@@ -44,11 +44,7 @@ def simulate_sweep(
     ``contact_drop`` is the fraction of the drive that falls across the contacts,
     so the 2T and 4T views differ the way they do on a real sample.
     """
-    h = (
-        HANDEDNESS.get(handedness, 0.0)
-        if isinstance(handedness, str)
-        else float(handedness)
-    )
+    h = float(handedness)
     rng = np.random.default_rng(seed)
 
     ramp = np.linspace(-v_max, v_max, n_points)
@@ -72,15 +68,22 @@ def simulate_sweep(
     }
 
 
-def write_tdms(path: str | Path, raw: dict[str, np.ndarray], group: str | None = None) -> Path:
-    """Write simulated channels out under the real TDMS channel names."""
+def write_tdms(
+    path: str | Path,
+    raw: dict[str, np.ndarray],
+    *,
+    channel_names: dict[str, str] | None = None,
+    group: str | None = None,
+) -> Path:
+    """Write simulated channels out under real TDMS channel names."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    names = {**DEFAULT_CHANNELS, **(channel_names or {})}
     group = group or f"Data.{path.stem.split('.')[-1]}"
     with TdmsWriter(path) as writer:
         writer.write_segment(
             [
-                ChannelObject(group, DEFAULT_CHANNELS[role], np.asarray(data, float))
+                ChannelObject(group, names[role], np.asarray(data, float))
                 for role, data in raw.items()
             ]
         )
@@ -89,8 +92,9 @@ def write_tdms(path: str | Path, raw: dict[str, np.ndarray], group: str | None =
 
 def simulate_into(
     folder: str | Path,
-    handedness: float | str,
+    handedness: float,
     *,
+    channel_names: dict[str, str] | None = None,
     index: int | None = None,
     stem: str = "SIM",
     **kwargs,
@@ -100,23 +104,58 @@ def simulate_into(
     folder.mkdir(parents=True, exist_ok=True)
     if index is None:
         index = len(list(folder.glob("*.tdms")))
-    return write_tdms(folder / f"{stem}.{index:06d}.tdms", simulate_sweep(handedness, **kwargs))
+    raw = simulate_sweep(handedness, **kwargs)
+    return write_tdms(
+        folder / f"{stem}.{index:06d}.tdms", raw, channel_names=channel_names
+    )
+
+
+def simulate_wire_sweep(
+    folder: str | Path,
+    direction: str,
+    chirality: float = 1.0,
+    **kwargs,
+) -> Path:
+    """One sweep for one wire, driven ``forward`` or ``reverse``.
+
+    Forward and reverse get opposite sign - a genuinely chiral wire (chirality
+    != 0) shows mirrored asymmetry between the two; chirality=0 is a wire with
+    no chiral response either way.
+    """
+    sign = 1.0 if direction == "forward" else -1.0
+    return simulate_into(folder, sign * chirality, **kwargs)
 
 
 def write_demo_dataset(
     root: str | Path,
     *,
+    n_wires: int = 2,
     n_repeats: int = 4,
-    labels: tuple[str, str, str] = ("A_CW", "B_CCW", "C_control"),
+    chirality: tuple[float, ...] | None = None,
     seed: int = 7,
+    channel_names: dict[str, str] | None = None,
     **kwargs,
-) -> dict[str, Path]:
-    """Populate one folder per structure with repeat sweeps."""
+) -> dict[str, dict[str, Path]]:
+    """Populate <root>/wireN/forward and /reverse with repeat sweeps."""
     root = Path(root)
-    out: dict[str, Path] = {}
-    for slot, (label, h) in enumerate(zip(labels, (+1.0, -1.0, 0.0))):
-        folder = root / label
-        for k in range(n_repeats):
-            simulate_into(folder, h, index=k, stem=label, seed=seed + 100 * slot + k, **kwargs)
-        out[label] = folder
+    chir = chirality or tuple(1.0 if i == 0 else -1.0 for i in range(n_wires))
+    out: dict[str, dict[str, Path]] = {}
+    for wi in range(n_wires):
+        label = f"wire{wi + 1}"
+        wire_out = {}
+        for direction in ("forward", "reverse"):
+            folder = root / label / direction
+            for k in range(n_repeats):
+                simulate_wire_sweep(
+                    folder,
+                    direction,
+                    chir[wi],
+                    index=k,
+                    stem=f"{label}_{direction}",
+                    seed=seed + 1000 * wi + (500 if direction == "reverse" else 0) + k,
+                    channel_names=channel_names,
+                    **kwargs,
+                )
+            wire_out[direction] = folder
+        out[label] = wire_out
     return out

@@ -41,39 +41,62 @@ def build_sweep_config(
     *,
     start: float,
     end: float,
+    drive_channel: int,
+    hold_channel: int | None = None,
     sweep_time: float = 30.0,
     initial_wait: float = 1.0,
     return_to_start: bool = False,
-    channel: int = 1,
     pattern: str = "Ramp /\\",
     table: list | None = None,
 ) -> dict:
-    """Assemble the dict LockinSweep expects, for one sweep channel."""
+    """Sweep config for one channel; optionally pin a second one at 0V.
+
+    ``hold_channel`` is the electrode on the other end of the wire - explicitly
+    driven to 0 rather than left floating, so swapping which end sources current
+    (forward vs reverse) is a real electrode swap, not just a sign flip.
+    """
+    table = table if table is not None else [1]
+    channels = [
+        {
+            "Enable?": True,
+            "Channel": int(drive_channel),
+            "Start": float(start),
+            "End": float(end),
+            "Pattern": pattern,
+            "Table": table,
+        }
+    ]
+    if hold_channel is not None:
+        channels.append(
+            {
+                "Enable?": True,
+                "Channel": int(hold_channel),
+                "Start": 0.0,
+                "End": 0.0,
+                "Pattern": pattern,
+                "Table": table,
+            }
+        )
     return {
         "sweepTime": float(sweep_time),
         "initialWaitTime": float(initial_wait),
         "returnToStart": bool(return_to_start),
-        "sweepChannels": [
-            {
-                "Enable?": True,
-                "Channel": int(channel),
-                "Start": float(start),
-                "End": float(end),
-                "Pattern": pattern,
-                "Table": table if table is not None else [1],
-            }
-        ],
+        "sweepChannels": channels,
     }
 
 
 def wait_for_new_tdms(
-    folder: Path, before: set[str], *, timeout: float = 60.0, poll: float = 0.5
+    folder: Path, before: set[str], *, timeout: float = 8.0, poll: float = 0.5
 ) -> Path | None:
-    """Wait for a .tdms that was not in ``before`` to appear and stop growing."""
+    """Wait for a .tdms that was not in ``before`` to appear and stop growing.
+
+    LockinSweep already blocks until the sweep is done, so this is only for the
+    file to finish flushing to disk - a few seconds, not the sweep time.
+    """
     folder = Path(folder)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        fresh = [p for p in folder.glob("*.tdms") if p.name not in before]
+        fresh = [p for p in folder.rglob("*.tdms") if p.name not in before]
         if fresh:
             newest = max(fresh, key=lambda p: p.stat().st_mtime)
             size = newest.stat().st_size
@@ -90,14 +113,12 @@ def run_sweep(
     comments: str,
     config: dict,
     watch_dir: Path | None = None,
-    timeout: float = 60.0,
+    timeout: float = 8.0,
 ) -> Path | None:
     """Run one lock-in sweep. Returns the TDMS file it produced, if we spot it.
 
-    ``watch_dir`` is where the notebook expects the file to land - normally
-    ``<session root>/<exp_folder>``. If it is not given, or nothing new shows up
-    before ``timeout``, the sweep has still run; the file just gets picked up on
-    the next reload.
+    The sweep has already happened by the time this returns, regardless of
+    whether the file gets found - a miss here just means hit Reload.
     """
     if not is_available():
         raise RuntimeError(f"CESession unavailable — {_import_error}")
@@ -106,7 +127,7 @@ def run_sweep(
     if watch_dir is not None:
         watch_dir = Path(watch_dir)
         if watch_dir.is_dir():
-            before = {p.name for p in watch_dir.glob("*.tdms")}
+            before = {p.name for p in watch_dir.rglob("*.tdms")}
 
     with CESession() as exp:
         exp.Transport.LockinSweep(exp_folder, comments, config, run_continuous=False)
