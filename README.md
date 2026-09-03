@@ -17,7 +17,8 @@ First run downloads deps via `uv` (~30s). Do that before the demo.
    voltage left/right (AI channels). Folder = label. Moving to a new wire is
    just retyping the label.
 2. **Measure** — pick a direction, hit **Run IV sweep**. One sweep per click.
-3. **Sweeps** — table of what's on disk, pick which sweeps to plot.
+3. **Sweeps** — table of what's on disk, pick which sweeps to plot, and
+   which ramp segment (up / down / both — for a round-trip sweep).
 4. **IV curves** — both directions, overlaid, one plot.
 
 No analysis beyond that right now (asymmetry, mirror score, dI/dV) — it's
@@ -47,8 +48,14 @@ pointed at.
 
 No separate current-sense field — current is read from whichever side isn't
 driving (right's AI channel going left→right, left's going right→left), same
-numbers as Current left/right in Setup. Current gain and 2T/4T are global. Bad
-files show up under *Unreadable*, nothing else stops.
+numbers as Current left/right in Setup. Bias (V) is likewise referenced to
+whichever side *is* driving, not a fixed left/right convention — driving from
+the right makes the right electrode the high side, so without this an
+ordinary resistance comes out with an inverted slope in that direction. Both
+live in `chiral_kto/ivio.py::load_wire_folder`, covered by `selftest.py`.
+
+Current gain and 2T/4T are global. Bad files show up under *Unreadable*,
+nothing else stops.
 
 ---
 
@@ -58,10 +65,11 @@ files show up under *Unreadable*, nothing else stops.
 .\demo.ps1 test
 ```
 
-19 checks against synthetic data with a known asymmetry — round-tripped
+20 checks against synthetic data with a known asymmetry — round-tripped
 through TDMS, forward/reverse mirroring, an achiral wire near zero, a weak
-partner scoring partial not perfect. Tests `chiral_kto/analysis.py`, which
-the notebook doesn't currently use. Run after touching it.
+partner scoring partial not perfect, and a hand-built ordinary resistor that
+must slope the same way driven from either end. Tests `chiral_kto/analysis.py`
+too, which the notebook doesn't currently use. Run after touching either.
 
 ---
 

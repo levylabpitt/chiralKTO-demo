@@ -147,3 +147,43 @@ def load_folder(
         except Exception as exc:  # noqa: BLE001 - surfaced in the UI
             problems.append(f"{p.name}: {exc}")
     return sweeps, problems
+
+
+def wire_channels(
+    direction: str, *, cur_left: int, cur_right: int, volt_left: str, volt_right: str
+) -> dict[str, str]:
+    """Channel map for one drive direction of a two-electrode wire.
+
+    Current is sensed on whichever side isn't driving. Bias is referenced to
+    whichever side *is* driving (v_plus = the driving side) rather than a
+    fixed left/right convention - otherwise an ordinary, non-chiral resistance
+    comes out with opposite-sign slope in the two directions, since driving
+    from the right makes the right electrode the high side, not the left.
+    """
+    if direction == "forward":
+        drive, sense, v_plus, v_minus = cur_left, cur_right, volt_left, volt_right
+    else:
+        drive, sense, v_plus, v_minus = cur_right, cur_left, volt_right, volt_left
+    return {"drive": f"AO{drive}", "current": f"AI{sense}", "v_plus": v_plus, "v_minus": v_minus}
+
+
+def load_wire_folder(
+    folder: str | Path,
+    direction: str,
+    *,
+    cur_left: int,
+    cur_right: int,
+    volt_left: str,
+    volt_right: str,
+    mode: str = "4T",
+    current_gain: float = 1.0,
+) -> tuple[list[IVSweep], list[str]]:
+    """load_folder(), with the direction-dependent channel wiring worked out."""
+    return load_folder(
+        folder,
+        mode=mode,
+        channels=wire_channels(
+            direction, cur_left=cur_left, cur_right=cur_right, volt_left=volt_left, volt_right=volt_right
+        ),
+        current_gain=current_gain,
+    )

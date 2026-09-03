@@ -26,6 +26,7 @@ def _():
 
     import altair as alt
     import marimo as mo
+    import numpy as np
     import pandas as pd
 
     NOTEBOOK_DIR = Path(__file__).resolve().parent
@@ -34,6 +35,7 @@ def _():
 
     import instrument
     from chiral_kto import ivio
+    from chiral_kto.analysis import split_branches
 
     DIRECTIONS = ("forward", "reverse")
     DIR_LABELS = {"forward": "left → right", "reverse": "right → left"}
@@ -56,7 +58,9 @@ def _():
         instrument,
         ivio,
         mo,
+        np,
         pd,
+        split_branches,
     )
 
 
@@ -154,8 +158,9 @@ def _(
             mo.hstack([cur_left, cur_right, volt_left, volt_right], justify="start", gap=1, wrap=True),
             mo.hstack([signal_mode, current_gain], justify="start", gap=2),
             mo.md(
-                f"current is sensed on whichever side isn't driving — right's "
-                f"channel when going left → right, left's when going right → left"
+                f"current is sensed on whichever side isn't driving, and bias is "
+                f"measured relative to whichever side *is* — both flip with direction, "
+                f"so an ordinary resistance looks the same shape either way"
             ),
             mo.md(
                 f"`{fwd_dir.name}`: {n_f} · `{rev_dir.name}`: {n_r} "
@@ -322,21 +327,17 @@ def _(
     reload_btn.value, run_status  # reload triggers
 
     _dirs = {"forward": fwd_dir, "reverse": rev_dir}
-    # whichever side isn't driving is where the return current is sensed
-    _drives = {"forward": cur_left.value, "reverse": cur_right.value}
-    _senses = {"forward": cur_right.value, "reverse": cur_left.value}
     sweeps = {}
     problems = []
     for _d in DIRECTIONS:
-        _found, _bad = ivio.load_folder(
+        _found, _bad = ivio.load_wire_folder(
             _dirs[_d],
+            _d,
+            cur_left=cur_left.value,
+            cur_right=cur_right.value,
+            volt_left=volt_left.value,
+            volt_right=volt_right.value,
             mode=signal_mode.value,
-            channels={
-                "drive": f"AO{_drives[_d]}",
-                "current": f"AI{_senses[_d]}",
-                "v_plus": volt_left.value,
-                "v_minus": volt_right.value,
-            },
             current_gain=float(current_gain.value),
         )
         sweeps[_d] = _found
@@ -378,20 +379,35 @@ def _(DIRECTIONS, pick, sweeps):
 
 
 @app.cell
-def _(DIRECTIONS, DIR_LABELS, pd, selected):
-    def iv_frame():
-        frames = [
-            pd.DataFrame(
-                {
-                    "V": sw.v,
-                    "I_nA": sw.i / 1e-9,
-                    "direction": DIR_LABELS[d],
-                    "file": sw.name,
-                }
-            )
-            for d in DIRECTIONS
-            for sw in selected[d]
+def _(mo):
+    ramp_mode = mo.ui.radio(
+        options=["both", "up", "down"], value="both", inline=True, label="Ramp"
+    )
+    ramp_mode
+    return (ramp_mode,)
+
+
+@app.cell
+def _(DIRECTIONS, DIR_LABELS, np, pd, ramp_mode, selected, split_branches):
+    def _branch_points(sw):
+        if ramp_mode.value == "both":
+            return sw.v, sw.i
+        segments = [
+            (sv, si) for sv, si in split_branches(sw.v, sw.i)
+            if (sv[-1] > sv[0]) == (ramp_mode.value == "up")
         ]
+        if not segments:
+            return sw.v, sw.i
+        return np.concatenate([sv for sv, _ in segments]), np.concatenate([si for _, si in segments])
+
+    def iv_frame():
+        frames = []
+        for d in DIRECTIONS:
+            for sw in selected[d]:
+                v, i = _branch_points(sw)
+                frames.append(
+                    pd.DataFrame({"V": v, "I_nA": i / 1e-9, "direction": DIR_LABELS[d], "file": sw.name})
+                )
         if not frames:
             return pd.DataFrame(columns=["V", "I_nA", "direction", "file"])
         return pd.concat(frames, ignore_index=True)

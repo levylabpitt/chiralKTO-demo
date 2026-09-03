@@ -18,6 +18,7 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+from nptdms import ChannelObject, TdmsWriter
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -152,6 +153,45 @@ def main() -> int:
         g0 = res[("wire1", "forward")].g0
         check("zero-bias conductance is positive and finite", np.isfinite(g0) and g0 > 0,
               f"{g0 / 1e-9:.3f} nS")
+
+        # --- an ordinary resistor must not look chiral just from which end
+        # drives it. AI3/AI5 are FIXED physical probes (left/right), unaware
+        # of software "directions" - only load_wire_folder should know to
+        # reference bias to the driving side. Build the raw files by hand so
+        # the idealised simulator (which has no left/right) can't hide the bug.
+        R = 1e6
+        ramp = np.linspace(-0.05, 0.05, 51)
+
+        def write_raw(path, drive_ch, sense_ch, v_left_sign):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            group = "Data.000000"
+            with TdmsWriter(path) as w:
+                w.write_segment(
+                    [
+                        ChannelObject(group, f"AO{drive_ch}", ramp),
+                        ChannelObject(group, "AI3", v_left_sign * 0.5 * ramp),
+                        ChannelObject(group, "AI5", -v_left_sign * 0.5 * ramp),
+                        ChannelObject(group, f"AI{sense_ch}", ramp / R),
+                    ]
+                )
+
+        raw_root = root / "raw_resistor"
+        write_raw(raw_root / "r_forward" / "s.000000.tdms", 1, 2, v_left_sign=+1)
+        write_raw(raw_root / "r_reverse" / "s.000000.tdms", 2, 1, v_left_sign=-1)
+
+        r_fwd, _ = ivio.load_wire_folder(
+            raw_root / "r_forward", "forward", cur_left=1, cur_right=2, volt_left="AI3", volt_right="AI5"
+        )
+        r_rev, _ = ivio.load_wire_folder(
+            raw_root / "r_reverse", "reverse", cur_left=1, cur_right=2, volt_left="AI3", volt_right="AI5"
+        )
+        fwd_slope = float(np.polyfit(r_fwd[0].v, r_fwd[0].i, 1)[0])
+        rev_slope = float(np.polyfit(r_rev[0].v, r_rev[0].i, 1)[0])
+        check(
+            "an ordinary resistor slopes the same way in both directions",
+            fwd_slope > 0 and rev_slope > 0,
+            f"forward {fwd_slope / 1e-9:.3f} nS, reverse {rev_slope / 1e-9:.3f} nS",
+        )
 
     print()
     if failures:
