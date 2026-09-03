@@ -26,7 +26,6 @@ def _():
 
     import altair as alt
     import marimo as mo
-    import numpy as np
     import pandas as pd
 
     NOTEBOOK_DIR = Path(__file__).resolve().parent
@@ -35,7 +34,6 @@ def _():
 
     import instrument
     from chiral_kto import ivio
-    from chiral_kto.analysis import split_branches
 
     DIRECTIONS = ("forward", "reverse")
     DIR_LABELS = {"forward": "left → right", "reverse": "right → left"}
@@ -58,9 +56,7 @@ def _():
         instrument,
         ivio,
         mo,
-        np,
         pd,
-        split_branches,
     )
 
 
@@ -181,7 +177,6 @@ def _(DIR_LABELS, mo):
     v_end = mo.ui.number(-10.0, 10.0, 0.001, value=0.1, label="End (V)")
     sweep_time = mo.ui.number(1.0, 600.0, 1.0, value=30.0, label="Sweep time (s)")
     initial_wait = mo.ui.number(0.0, 60.0, 0.5, value=1.0, label="Initial wait (s)")
-    sweep_pattern = mo.ui.text("Ramp /\\", label="Pattern")
     return_start = mo.ui.switch(False, label="return to start")
 
     comments = mo.ui.text_area(
@@ -200,7 +195,6 @@ def _(DIR_LABELS, mo):
         reload_btn,
         return_start,
         run_btn,
-        sweep_pattern,
         sweep_time,
         v_end,
         v_start,
@@ -221,7 +215,6 @@ def _(
     rev_dir,
     run_btn,
     reload_btn,
-    sweep_pattern,
     sweep_time,
     v_end,
     v_start,
@@ -240,7 +233,7 @@ def _(
                 f"({wire_label.value})"
             ),
             mo.hstack(
-                [v_start, v_end, sweep_time, initial_wait, sweep_pattern],
+                [v_start, v_end, sweep_time, initial_wait],
                 justify="start", gap=1, wrap=True,
             ),
             comments,
@@ -265,7 +258,6 @@ def _(
     return_start,
     rev_dir,
     run_btn,
-    sweep_pattern,
     sweep_time,
     v_end,
     v_start,
@@ -286,7 +278,7 @@ def _(
             sweep_time=float(sweep_time.value),
             initial_wait=float(initial_wait.value),
             return_to_start=bool(return_start.value),
-            pattern=sweep_pattern.value,
+            pattern="Ramp /",
         )
 
         try:
@@ -379,35 +371,15 @@ def _(DIRECTIONS, pick, sweeps):
 
 
 @app.cell
-def _(mo):
-    ramp_mode = mo.ui.radio(
-        options=["both", "up", "down"], value="both", inline=True, label="Ramp"
-    )
-    ramp_mode
-    return (ramp_mode,)
-
-
-@app.cell
-def _(DIRECTIONS, DIR_LABELS, np, pd, ramp_mode, selected, split_branches):
-    def _branch_points(sw):
-        if ramp_mode.value == "both":
-            return sw.v, sw.i
-        segments = [
-            (sv, si) for sv, si in split_branches(sw.v, sw.i)
-            if (sv[-1] > sv[0]) == (ramp_mode.value == "up")
-        ]
-        if not segments:
-            return sw.v, sw.i
-        return np.concatenate([sv for sv, _ in segments]), np.concatenate([si for _, si in segments])
-
+def _(DIRECTIONS, DIR_LABELS, pd, selected):
     def iv_frame():
-        frames = []
-        for d in DIRECTIONS:
-            for sw in selected[d]:
-                v, i = _branch_points(sw)
-                frames.append(
-                    pd.DataFrame({"V": v, "I_nA": i / 1e-9, "direction": DIR_LABELS[d], "file": sw.name})
-                )
+        frames = [
+            pd.DataFrame(
+                {"V": sw.v, "I_nA": sw.i / 1e-9, "direction": DIR_LABELS[d], "file": sw.name}
+            )
+            for d in DIRECTIONS
+            for sw in selected[d]
+        ]
         if not frames:
             return pd.DataFrame(columns=["V", "I_nA", "direction", "file"])
         return pd.concat(frames, ignore_index=True)

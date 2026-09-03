@@ -16,9 +16,9 @@ First run downloads deps via `uv` (~30s). Do that before the demo.
 1. **Setup** — session folder, wire label, current left/right (AO channels),
    voltage left/right (AI channels). Folder = label. Moving to a new wire is
    just retyping the label.
-2. **Measure** — pick a direction, hit **Run IV sweep**. One sweep per click.
-3. **Sweeps** — table of what's on disk, pick which sweeps to plot, and
-   which ramp segment (up / down / both — for a round-trip sweep).
+2. **Measure** — pick a direction, hit **Run IV sweep**. One sweep per click,
+   one-way ramp (`Ramp /`, not a round trip) — nothing to split into branches.
+3. **Sweeps** — table of what's on disk, pick which sweeps to plot.
 4. **IV curves** — both directions, overlaid, one plot.
 
 No analysis beyond that right now (asymmetry, mirror score, dI/dV) — it's
