@@ -13,11 +13,11 @@ First run downloads deps via `uv` (~30s). Do that before the demo.
 
 ## The flow
 
-1. **Setup** — session folder, number of wires. Each wire: name, folder,
-   electrode A, electrode B (the two AO channels at its ends).
-2. **Measure** — pick a wire and a direction. Forward drives electrode A,
-   holds B at 0V; reverse is the opposite. Hit **Run IV sweep**.
-3. **Sweeps / Analysis** — updates on its own. Switch direction, sweep again.
+1. **Setup** — session folder, number of wires. Each wire: label, current
+   left/right (AO channels), voltage left/right (AI channels). Folder = label.
+2. **Measure** — pick a wire, hit **Run IV sweep**. Runs left → right, then
+   right → left, on its own — status shows which phase is running.
+3. **Sweeps / Analysis** — updates on its own.
 4. **All wires** — one row per wire, so you can compare across them.
 
 Money shot is the asymmetry plot: dashed = −A driving reverse. A chiral wire
@@ -32,15 +32,15 @@ flips sign; an achiral one sits near zero either way.
 lazily — the notebook still opens without it, status line up top says which
 state you're in. **Rehearsal** in Measure writes synthetic data instead.
 
-Each direction pins the *other* electrode at 0V explicitly (a second entry in
-`sweepChannels`), not left floating.
+Each direction pins the *other* current lead at 0V explicitly (a second entry
+in `sweepChannels`), not left floating.
 
 ## Data
 
-One sweep, one `.tdms`, one file per repeat, in `<wire>/forward/` or
-`<wire>/reverse/`. Current/V+/V- channel names are set once in Setup, shared
-across wires — change them if the wiring moves. Current gain scales into amps
-if the current channel isn't already in amps. Bad files show up under
+One sweep, one `.tdms`, one file per repeat, in `<wire>/forward/` (left→right)
+or `<wire>/reverse/` (right→left). Voltage left/right are per wire — different
+wires can sit on different AI channels. The current-sense channel (default
+`AI4`) and current gain are global, set once in Setup. Bad files show up under
 *Unreadable*, nothing else stops.
 
 ---
@@ -91,4 +91,4 @@ demo.ps1               launcher: no arg = edit, `present`, `test`
 - Cell goes red — everything below stops, rest is fine. Fix, it re-runs.
 - Sweep throws — run from FLEX directly, hit **Reload**.
 - Instrument unreachable — flip **rehearsal**, keep talking.
-- Curves look off — check which electrode is A vs B for that wire.
+- Curves look off — check which current lead is left vs right for that wire.

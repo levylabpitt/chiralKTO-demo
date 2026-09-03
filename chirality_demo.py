@@ -104,10 +104,11 @@ def _(mo, n_wires):
         [
             mo.ui.dictionary(
                 {
-                    "name": mo.ui.text(f"wire{i + 1}", label="Name"),
-                    "folder": mo.ui.text(f"wire{i + 1}", label="Folder"),
-                    "elec_a": mo.ui.number(1, 32, 1, value=2 * i + 1, label="Electrode A"),
-                    "elec_b": mo.ui.number(1, 32, 1, value=2 * i + 2, label="Electrode B"),
+                    "label": mo.ui.text(f"wire{i + 1}", label="Label"),
+                    "cur_left": mo.ui.number(1, 32, 1, value=2 * i + 1, label="Current left (AO)"),
+                    "cur_right": mo.ui.number(1, 32, 1, value=2 * i + 2, label="Current right (AO)"),
+                    "volt_left": mo.ui.text("AI3", label="Voltage left"),
+                    "volt_right": mo.ui.text("AI5", label="Voltage right"),
                     "chirality": mo.ui.number(
                         -1.0, 1.0, 0.1, value=1.0 if i % 2 == 0 else -1.0,
                         label="Chirality (rehearsal)",
@@ -123,27 +124,13 @@ def _(mo, n_wires):
 @app.cell
 def _(mo):
     ch_current = mo.ui.text("AI4", label="current")
-    ch_vplus = mo.ui.text("AI3", label="V+")
-    ch_vminus = mo.ui.text("AI5", label="V-")
     signal_mode = mo.ui.radio(options=["4T", "2T"], value="4T", inline=True, label="Leads")
     current_gain = mo.ui.number(1e-9, 1e9, value=1.0, label="Current gain (A/raw)")
-    return ch_current, ch_vminus, ch_vplus, current_gain, signal_mode
+    return ch_current, current_gain, signal_mode
 
 
 @app.cell
-def _(
-    Path,
-    ch_current,
-    ch_vminus,
-    ch_vplus,
-    browse,
-    current_gain,
-    mo,
-    n_wires,
-    session_dir,
-    signal_mode,
-    wire_cfg,
-):
+def _(Path, browse, ch_current, current_gain, mo, n_wires, session_dir, signal_mode, wire_cfg):
     def _picked():
         if browse is None or not browse.value:
             return ""
@@ -152,20 +139,23 @@ def _(
 
     root_path = Path(_picked() or session_dir.value.strip().strip('"')).expanduser()
 
-    wire_names = [w["name"] for w in wire_cfg.value]
-    wire_elec = {w["name"]: (int(w["elec_a"]), int(w["elec_b"])) for w in wire_cfg.value}
-    wire_chirality = {w["name"]: float(w["chirality"]) for w in wire_cfg.value}
+    wire_names = [w["label"] for w in wire_cfg.value]
+    wire_leads = {
+        w["label"]: (int(w["cur_left"]), int(w["cur_right"]), w["volt_left"], w["volt_right"])
+        for w in wire_cfg.value
+    }
+    wire_chirality = {w["label"]: float(w["chirality"]) for w in wire_cfg.value}
     wire_dirs = {
-        w["name"]: {
-            "forward": root_path / w["folder"] / "forward",
-            "reverse": root_path / w["folder"] / "reverse",
+        w["label"]: {
+            "forward": root_path / w["label"] / "forward",
+            "reverse": root_path / w["label"] / "reverse",
         }
         for w in wire_cfg.value
     }
 
     def _wire_panel(elem):
         w = elem.value
-        d = wire_dirs[w["name"]]
+        d = wire_dirs[w["label"]]
         n_f = len(list(d["forward"].glob("*.tdms"))) if d["forward"].is_dir() else 0
         n_r = len(list(d["reverse"].glob("*.tdms"))) if d["reverse"].is_dir() else 0
         return mo.vstack(
@@ -182,17 +172,15 @@ def _(
             mo.accordion({"Browse…": browse}) if browse is not None else mo.md(""),
             n_wires,
             mo.vstack([_wire_panel(w) for w in wire_cfg]),
-            mo.hstack([signal_mode, current_gain], justify="start", gap=2),
-            mo.hstack([ch_current, ch_vplus, ch_vminus], justify="start", gap=1, wrap=True),
+            mo.hstack([ch_current, signal_mode, current_gain], justify="start", gap=2),
         ]
     )
-    return root_path, wire_chirality, wire_dirs, wire_elec, wire_names
+    return root_path, wire_chirality, wire_dirs, wire_leads, wire_names
 
 
 @app.cell
-def _(DIRECTIONS, mo, wire_names):
+def _(mo, wire_names):
     active = mo.ui.dropdown(options=wire_names, value=wire_names[0], label="**Wire**")
-    direction = mo.ui.radio(options=list(DIRECTIONS), value="forward", inline=True, label="Direction")
 
     v_start = mo.ui.number(-10.0, 10.0, 0.001, value=-0.1, label="Start (V)")
     v_end = mo.ui.number(-10.0, 10.0, 0.001, value=0.1, label="End (V)")
@@ -215,7 +203,6 @@ def _(DIRECTIONS, mo, wire_names):
     return (
         active,
         comments,
-        direction,
         initial_wait,
         rehearsal,
         reload_btn,
@@ -233,7 +220,6 @@ def _(DIRECTIONS, mo, wire_names):
 def _(
     active,
     comments,
-    direction,
     initial_wait,
     mo,
     rehearsal,
@@ -246,18 +232,18 @@ def _(
     v_end,
     v_start,
     wire_dirs,
-    wire_elec,
+    wire_leads,
 ):
-    _a, _b = wire_elec[active.value]
-    _drive, _hold = (_a, _b) if direction.value == "forward" else (_b, _a)
+    _left, _right, _, _ = wire_leads[active.value]
 
     mo.vstack(
         [
             mo.md("## Measure"),
-            mo.hstack([active, direction], justify="start", gap=2),
+            active,
             mo.md(
-                f"drives electrode **{_drive}**, electrode **{_hold}** held at 0V → "
-                f"saves into `{wire_dirs[active.value][direction.value]}`"
+                f"runs **left → right** (AO{_left} drives, AO{_right} held at 0V), then "
+                f"**right → left** (AO{_right} drives, AO{_left} held at 0V) → "
+                f"saves into `{wire_dirs[active.value]['forward']}` / `.../reverse`"
             ),
             mo.hstack(
                 [v_start, v_end, sweep_time, initial_wait, sweep_pattern],
@@ -275,10 +261,7 @@ def _(
 def _(
     active,
     ch_current,
-    ch_vminus,
-    ch_vplus,
     comments,
-    direction,
     initial_wait,
     instrument,
     mo,
@@ -293,59 +276,65 @@ def _(
     v_start,
     wire_chirality,
     wire_dirs,
-    wire_elec,
+    wire_leads,
 ):
     run_status = mo.md("")
 
     if run_btn.value:
         _wire = active.value
-        _dir = direction.value
-        _a, _b = wire_elec[_wire]
-        _drive, _hold = (_a, _b) if _dir == "forward" else (_b, _a)
-        _save_dir = wire_dirs[_wire][_dir]
-        _save_dir.mkdir(parents=True, exist_ok=True)
-        _done, _errors = [], []
+        _left, _right, _vl, _vr = wire_leads[_wire]
+        _phases = [
+            ("forward", "IV left → right", _left, _right),
+            ("reverse", "IV right → left", _right, _left),
+        ]
+        _done = {"forward": [], "reverse": []}
+        _errors = []
 
-        _config = instrument.build_sweep_config(
-            start=float(v_start.value),
-            end=float(v_end.value),
-            drive_channel=_drive,
-            hold_channel=_hold,
-            sweep_time=float(sweep_time.value),
-            initial_wait=float(initial_wait.value),
-            return_to_start=bool(return_start.value),
-            pattern=sweep_pattern.value,
-        )
-
-        for _rep in range(int(repeats.value)):
-            _title = f"Sweeping {_wire} {_dir} — {_rep + 1}/{int(repeats.value)}"
-            try:
-                with mo.status.spinner(title=_title):
-                    if rehearsal.value:
-                        _path = simulate.simulate_wire_sweep(
-                            _save_dir,
-                            _dir,
-                            wire_chirality[_wire],
-                            stem=f"{_wire}_{_dir}",
-                            v_max=max(abs(v_start.value), abs(v_end.value)),
-                            channel_names={
-                                "drive": f"AO{_drive}",
-                                "current": ch_current.value,
-                                "v_plus": ch_vplus.value,
-                                "v_minus": ch_vminus.value,
-                            },
-                        )
-                    else:
-                        _path = instrument.run_sweep(
-                            exp_folder=f"{_wire}_{_dir}",
-                            comments=comments.value,
-                            config=_config,
-                            watch_dir=_save_dir,
-                        )
-                _done.append(_path.name if _path else "(ran; file not seen yet)")
-            except Exception as exc:
-                _errors.append(f"repeat {_rep + 1}: {exc}")
+        for _dir, _phase_label, _drive, _hold in _phases:
+            if _errors:
                 break
+            _save_dir = wire_dirs[_wire][_dir]
+            _save_dir.mkdir(parents=True, exist_ok=True)
+            _config = instrument.build_sweep_config(
+                start=float(v_start.value),
+                end=float(v_end.value),
+                drive_channel=_drive,
+                hold_channel=_hold,
+                sweep_time=float(sweep_time.value),
+                initial_wait=float(initial_wait.value),
+                return_to_start=bool(return_start.value),
+                pattern=sweep_pattern.value,
+            )
+
+            for _rep in range(int(repeats.value)):
+                _title = f"{_phase_label} — {_wire} ({_rep + 1}/{int(repeats.value)})"
+                try:
+                    with mo.status.spinner(title=_title):
+                        if rehearsal.value:
+                            _path = simulate.simulate_wire_sweep(
+                                _save_dir,
+                                _dir,
+                                wire_chirality[_wire],
+                                stem=f"{_wire}_{_dir}",
+                                v_max=max(abs(v_start.value), abs(v_end.value)),
+                                channel_names={
+                                    "drive": f"AO{_drive}",
+                                    "current": ch_current.value,
+                                    "v_plus": _vl,
+                                    "v_minus": _vr,
+                                },
+                            )
+                        else:
+                            _path = instrument.run_sweep(
+                                exp_folder=f"{_wire}_{_dir}",
+                                comments=comments.value,
+                                config=_config,
+                                watch_dir=_save_dir,
+                            )
+                    _done[_dir].append(_path.name if _path else "(ran; file not seen yet)")
+                except Exception as exc:
+                    _errors.append(f"{_phase_label} rep {_rep + 1}: {exc}")
+                    break
 
         if _errors:
             run_status = mo.callout(
@@ -354,8 +343,8 @@ def _(
         else:
             run_status = mo.callout(
                 mo.md(
-                    f"**{len(_done)} sweep(s)** into `{_save_dir}`\n\n"
-                    + "\n".join(f"- `{d}`" for d in _done)
+                    f"**left → right**: {len(_done['forward'])} sweep(s)\n\n"
+                    f"**right → left**: {len(_done['reverse'])} sweep(s)"
                 ),
                 kind="success",
             )
@@ -367,8 +356,6 @@ def _(
 def _(
     DIRECTIONS,
     ch_current,
-    ch_vminus,
-    ch_vplus,
     current_gain,
     ivio,
     mo,
@@ -376,7 +363,7 @@ def _(
     run_status,
     signal_mode,
     wire_dirs,
-    wire_elec,
+    wire_leads,
     wire_names,
 ):
     reload_btn.value, run_status  # reload triggers
@@ -384,17 +371,17 @@ def _(
     sweeps = {}
     problems = []
     for _w in wire_names:
-        _a, _b = wire_elec[_w]
+        _left, _right, _vl, _vr = wire_leads[_w]
         for _d in DIRECTIONS:
-            _drive = _a if _d == "forward" else _b
+            _drive = _left if _d == "forward" else _right
             _found, _bad = ivio.load_folder(
                 wire_dirs[_w][_d],
                 mode=signal_mode.value,
                 channels={
                     "drive": f"AO{_drive}",
                     "current": ch_current.value,
-                    "v_plus": ch_vplus.value,
-                    "v_minus": ch_vminus.value,
+                    "v_plus": _vl,
+                    "v_minus": _vr,
                 },
                 current_gain=float(current_gain.value),
             )
