@@ -281,6 +281,7 @@ def _(
                     exp_folder=f"{wire_label.value}_{_dir}",
                     comments=comments.value,
                     config=_config,
+                    hold_channel=_hold,
                     watch_dir=_save_dir,
                 )
             run_status = mo.callout(

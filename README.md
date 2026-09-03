@@ -31,8 +31,10 @@ wire flips sign; an achiral one sits near zero either way.
 lazily — the notebook still opens without it, status line up top says which
 state you're in.
 
-Whichever side isn't driving gets pinned at 0V explicitly (a second entry in
-`sweepChannels`), not left floating.
+Whichever side isn't driving gets zeroed twice over: a 0V entry in
+`sweepChannels`, plus a direct `Lockin().setAO_DC(channel, 0)` call right
+before the sweep starts. Not left floating, and not left at whatever the
+last sweep set it to.
 
 ## Data
 

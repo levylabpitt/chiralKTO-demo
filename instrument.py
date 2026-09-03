@@ -24,10 +24,22 @@ except Exception as exc:  # noqa: BLE001 - absence is a normal state here
     CESession = None
     _import_error = f"{type(exc).__name__}: {exc}"
 
+try:
+    from flex.inst.levylab.Lockin import Lockin
+except Exception:  # noqa: BLE001 - absence is a normal state here
+    Lockin = None
+
 
 def is_available() -> bool:
     """True when a real sweep can be run from this machine."""
     return CESession is not None
+
+
+def zero_channel(channel: int) -> None:
+    """Force one AO channel to 0V directly, ahead of a sweep."""
+    if Lockin is None:
+        raise RuntimeError("Lockin driver unavailable")
+    Lockin().setAO_DC(channel=int(channel), value=0)
 
 
 def describe() -> str:
@@ -112,16 +124,25 @@ def run_sweep(
     exp_folder: str,
     comments: str,
     config: dict,
+    hold_channel: int | None = None,
     watch_dir: Path | None = None,
     timeout: float = 8.0,
 ) -> Path | None:
     """Run one lock-in sweep. Returns the TDMS file it produced, if we spot it.
+
+    ``hold_channel`` is zeroed directly through the Lockin driver before the
+    sweep starts - belt and suspenders on top of the 0V entry already in
+    ``config``, so the passive electrode never carries a leftover voltage from
+    a previous sweep.
 
     The sweep has already happened by the time this returns, regardless of
     whether the file gets found - a miss here just means hit Reload.
     """
     if not is_available():
         raise RuntimeError(f"CESession unavailable — {_import_error}")
+
+    if hold_channel is not None:
+        zero_channel(hold_channel)
 
     before: set[str] = set()
     if watch_dir is not None:
