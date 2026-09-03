@@ -22,12 +22,12 @@ $deps = @(
 
 switch ($Mode) {
     "test" {
-        uv run --python 3.12 selftest.py
+        uv run --active selftest.py
     }
     "present" {
-        uv run --python 3.12 @deps marimo run --no-sandbox chirality_demo.py
+        uv run --active @deps marimo run --no-sandbox chirality_demo.py
     }
     default {
-        uv run --python 3.12 @deps marimo edit --no-sandbox chirality_demo.py
+        uv run --active @deps marimo edit --no-sandbox chirality_demo.py
     }
 }
