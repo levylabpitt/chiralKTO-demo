@@ -26,7 +26,6 @@ def _():
 
     import altair as alt
     import marimo as mo
-    import numpy as np
     import pandas as pd
 
     NOTEBOOK_DIR = Path(__file__).resolve().parent
@@ -34,7 +33,7 @@ def _():
         sys.path.insert(0, str(NOTEBOOK_DIR))
 
     import instrument
-    from chiral_kto import analysis, ivio
+    from chiral_kto import ivio
 
     DIRECTIONS = ("forward", "reverse")
     DIR_LABELS = {"forward": "left → right", "reverse": "right → left"}
@@ -52,13 +51,11 @@ def _():
         NOTEBOOK_DIR,
         Path,
         alt,
-        analysis,
         datetime,
         exp_folder_name,
         instrument,
         ivio,
         mo,
-        np,
         pd,
     )
 
@@ -381,280 +378,65 @@ def _(DIRECTIONS, pick, sweeps):
 
 
 @app.cell
-def _(mo, np, selected):
-    def _sig(x, digits=4):
-        if not np.isfinite(x) or x == 0:
-            return 0.0
-        return float(round(x, -int(np.floor(np.log10(abs(x)))) + digits - 1))
-
-    _all = [s for group in selected.values() for s in group]
-    _reach = _sig(
-        min(min(abs(float(np.nanmin(s.v))), abs(float(np.nanmax(s.v)))) for s in _all)
-        if _all
-        else 0.1
-    )
-
-    branch_mode = mo.ui.radio(
-        options=["both", "forward", "backward"], value="both", inline=True, label="Branch"
-    )
-    smooth_win = mo.ui.slider(5, 81, 2, value=21, label="Smoothing", show_value=True)
-    log_scale = mo.ui.switch(False, label="log |I|")
-    eval_window = mo.ui.range_slider(
-        start=0.0,
-        stop=_reach,
-        step=_reach / 100,
-        value=[_sig(0.5 * _reach), _reach],
-        label="Evaluation bias window (V)",
-        show_value=True,
-        full_width=True,
-    )
-
-    mo.vstack(
-        [
-            mo.md("## Analysis"),
-            mo.hstack([branch_mode, smooth_win, log_scale], justify="start", gap=2),
-            eval_window,
-        ]
-    )
-    return branch_mode, eval_window, log_scale, smooth_win
-
-
-@app.cell
-def _(DIR_LABELS, analysis, branch_mode, mo, selected, smooth_win):
-    mo.stop(
-        len(selected["forward"]) == 0 or len(selected["reverse"]) == 0,
-        mo.callout(mo.md("Need at least one sweep in each direction."), kind="info"),
-    )
-
-    _pool = [s for group in selected.values() for s in group]
-    shared_grid = analysis.common_grid(_pool, n_points=401)
-    results = {
-        d: analysis.analyse_slot(
-            DIR_LABELS[d],
-            selected[d],
-            grid=shared_grid,
-            branch=branch_mode.value,
-            smooth_window=int(smooth_win.value),
-        )
-        for d in ("forward", "reverse")
-    }
-    return (results,)
-
-
-@app.cell
-def _(analysis, eval_window, results):
-    mirror = analysis.mirror_test(
-        results["forward"],
-        results["reverse"],
-        v_window=(float(eval_window.value[0]), float(eval_window.value[1])),
-    )
-    return (mirror,)
-
-
-@app.cell
-def _(mirror, mo, results):
-    def _pct(x):
-        return "—" if x != x else f"{100 * x:+.2f}%"
-
-    def _num(x, fmt="{:.2f}"):
-        return "—" if x != x else fmt.format(x)
-
-    _headline = [
-        mo.stat(
-            value=_pct(mirror.contrast),
-            label="Contrast",
-            caption=f"±{100 * mirror.contrast_err:.2f}%   t = {_num(mirror.t_stat, '{:.1f}')}",
-            bordered=True,
-        ),
-        mo.stat(
-            value=_num(mirror.mirror_score),
-            label="Mirror score",
-            caption="1 = flips cleanly · 0 = no mirroring",
-            bordered=True,
-        ),
-    ]
-    _tiles = [
-        mo.stat(
-            value=_pct(mirror.a_values[results[d].label][0]),
-            label=results[d].label,
-            caption=f"±{100 * mirror.a_values[results[d].label][1]:.2f}% · "
-            f"{results[d].n_sweeps} sweeps",
-            bordered=True,
-        )
-        for d in ("forward", "reverse")
-        if results.get(d) is not None and results[d].label in mirror.a_values
-    ]
-
-    mo.vstack(
-        [
-            mo.hstack(_headline, widths="equal", gap=1),
-            mo.hstack(_tiles, widths="equal", gap=1),
-            mo.callout(
-                mo.md(
-                    f"### {mirror.verdict()}\n\n"
-                    f"Over **{mirror.v_window[0]:.4g} – {mirror.v_window[1]:.4g} V**."
-                ),
-                kind="success" if mirror.significant else "neutral",
-            ),
-        ]
-    )
-    return
-
-
-@app.cell
-def _(DIRECTIONS, DIR_COLOURS, alt, np, pd, results):
-    def colour():
-        keep = [d for d in DIRECTIONS if results.get(d) is not None]
-        return alt.Color(
-            "structure:N",
-            scale=alt.Scale(
-                domain=[results[d].label for d in keep], range=[DIR_COLOURS[d] for d in keep]
-            ),
-            legend=alt.Legend(title=None, orient="top"),
-        )
-
+def _(DIRECTIONS, DIR_LABELS, pd, selected):
     def iv_frame():
-        return pd.concat(
-            [
-                pd.DataFrame(
-                    {
-                        "V": r.grid,
-                        "I_nA": r.i_mean / 1e-9,
-                        "lo": (r.i_mean - r.i_sd) / 1e-9,
-                        "hi": (r.i_mean + r.i_sd) / 1e-9,
-                        "absI_nA": np.abs(r.i_mean) / 1e-9,
-                        "dIdV_nS": r.didv / 1e-9,
-                        "structure": r.label,
-                    }
-                )
-                for r in (results.get(d) for d in DIRECTIONS)
-                if r is not None
-            ],
-            ignore_index=True,
-        ).dropna(subset=["I_nA"])
+        frames = [
+            pd.DataFrame(
+                {
+                    "V": sw.v,
+                    "I_nA": sw.i / 1e-9,
+                    "direction": DIR_LABELS[d],
+                    "file": sw.name,
+                }
+            )
+            for d in DIRECTIONS
+            for sw in selected[d]
+        ]
+        if not frames:
+            return pd.DataFrame(columns=["V", "I_nA", "direction", "file"])
+        return pd.concat(frames, ignore_index=True)
 
-    def asym_frame():
-        return pd.concat(
-            [
-                pd.DataFrame(
-                    {
-                        "V": r.u,
-                        "A": 100 * r.a_mean,
-                        "lo": 100 * (r.a_mean - r.a_sd),
-                        "hi": 100 * (r.a_mean + r.a_sd),
-                        "structure": r.label,
-                    }
-                )
-                for r in (results.get(d) for d in DIRECTIONS)
-                if r is not None
-            ],
-            ignore_index=True,
-        ).dropna(subset=["A"])
-
-    return asym_frame, colour, iv_frame
+    return (iv_frame,)
 
 
 @app.cell
-def _(alt, colour, iv_frame, log_scale, mo, pd, signal_mode):
+def _(DIR_COLOURS, DIR_LABELS, alt, iv_frame, mo, pd, signal_mode):
+    mo.stop(
+        iv_frame().empty,
+        mo.callout(mo.md("No sweeps selected — pick some above, or run one."), kind="info"),
+    )
+
     _df = iv_frame()
-    _base = alt.Chart(_df)
-    _x = alt.X("V:Q", title=f"{signal_mode.value} bias (V)")
-
-    if log_scale.value:
-        _iv = _base.mark_line(strokeWidth=2.5).encode(
-            x=_x,
-            y=alt.Y("absI_nA:Q", title="|I| (nA)", scale=alt.Scale(type="log")),
-            color=colour(),
-            tooltip=["structure:N", alt.Tooltip("V:Q", format=".4g"),
-                     alt.Tooltip("absI_nA:Q", format=".4g")],
-        )
-    else:
-        _iv = _base.mark_area(opacity=0.18).encode(
-            x=_x, y="lo:Q", y2="hi:Q", color=colour()
-        ) + _base.mark_line(strokeWidth=2.5).encode(
-            x=_x,
-            y=alt.Y("I_nA:Q", title="I (nA)"),
-            color=colour(),
-            tooltip=["structure:N", alt.Tooltip("V:Q", format=".4g"),
-                     alt.Tooltip("I_nA:Q", format=".4g")],
-        )
-
+    _colour = alt.Color(
+        "direction:N",
+        scale=alt.Scale(
+            domain=list(DIR_LABELS.values()),
+            range=[DIR_COLOURS["forward"], DIR_COLOURS["reverse"]],
+        ),
+        legend=alt.Legend(title=None, orient="top"),
+    )
     _zero = (
         alt.Chart(pd.DataFrame({"x": [0.0]}))
         .mark_rule(strokeDash=[4, 4], opacity=0.4)
         .encode(x="x:Q")
     )
-    mo.vstack(
-        [
-            mo.md("### IV curves — mean of repeats, shaded ±1 SD"),
-            mo.ui.altair_chart((_iv + _zero).properties(height=320)),
-        ]
-    )
-    return
-
-
-@app.cell
-def _(alt, asym_frame, colour, eval_window, mirror, mo, pd, results):
-    _df = asym_frame()
-    _r = results["reverse"]
-    _x = alt.X("V:Q", title="|Bias| (V)")
-
-    _layers = (
-        alt.Chart(
-            pd.DataFrame(
-                {"x": [float(eval_window.value[0])], "x2": [float(eval_window.value[1])]}
-            )
-        )
-        .mark_rect(opacity=0.09, color="#333")
-        .encode(x="x:Q", x2="x2:Q")
-        + alt.Chart(_df).mark_area(opacity=0.18).encode(x=_x, y="lo:Q", y2="hi:Q", color=colour())
-        + alt.Chart(_df)
-        .mark_line(strokeWidth=2.5)
+    _lines = (
+        alt.Chart(_df)
+        .mark_line(strokeWidth=1.5, opacity=0.85)
         .encode(
-            x=_x,
-            y=alt.Y("A:Q", title="Asymmetry A (%)"),
-            color=colour(),
-            tooltip=["structure:N", alt.Tooltip("V:Q", format=".4g"),
-                     alt.Tooltip("A:Q", format=".2f")],
+            x=alt.X("V:Q", title=f"{signal_mode.value} bias (V)"),
+            y=alt.Y("I_nA:Q", title="I (nA)"),
+            color=_colour,
+            detail="file:N",
+            tooltip=["direction:N", "file:N", alt.Tooltip("V:Q", format=".4g"),
+                     alt.Tooltip("I_nA:Q", format=".4g")],
         )
-        + alt.Chart(pd.DataFrame({"V": _r.u, "A": -100 * _r.a_mean}).dropna())
-        .mark_line(strokeWidth=2, strokeDash=[6, 4], color="#0f7bbf", opacity=0.9)
-        .encode(x="V:Q", y="A:Q")
-        + alt.Chart(pd.DataFrame({"y": [0.0]}))
-        .mark_rule(strokeDash=[4, 4], opacity=0.5)
-        .encode(y="y:Q")
     )
 
     mo.vstack(
         [
-            mo.md(
-                f"### Asymmetry\n\n"
-                f"Dashed = −A driving right → left. A chiral wire flips sign; an achiral "
-                f"one lands on zero either way. Mirror score {mirror.mirror_score:.2f}."
-            ),
-            mo.ui.altair_chart(_layers.properties(height=320)),
-        ]
-    )
-    return
-
-
-@app.cell
-def _(alt, colour, iv_frame, mo, signal_mode):
-    mo.vstack(
-        [
-            mo.md("### Differential conductance"),
-            mo.ui.altair_chart(
-                alt.Chart(iv_frame())
-                .mark_line(strokeWidth=2)
-                .encode(
-                    x=alt.X("V:Q", title=f"{signal_mode.value} bias (V)"),
-                    y=alt.Y("dIdV_nS:Q", title="dI/dV (nS)"),
-                    color=colour(),
-                    tooltip=["structure:N", alt.Tooltip("V:Q", format=".4g"),
-                             alt.Tooltip("dIdV_nS:Q", format=".4g")],
-                )
-                .properties(height=280)
-            ),
+            mo.md("## IV curves"),
+            mo.ui.altair_chart((_lines + _zero).properties(height=380)),
         ]
     )
     return
@@ -668,61 +450,12 @@ def _(mo):
 
 
 @app.cell
-def _(
-    asym_frame,
-    datetime,
-    eval_window,
-    export_btn,
-    iv_frame,
-    mirror,
-    mo,
-    pd,
-    results,
-    root_path,
-    signal_mode,
-    wire_label,
-):
+def _(datetime, export_btn, iv_frame, mo, root_path, wire_label):
     mo.stop(not export_btn.value)
 
     _out = root_path / "exports" / f"{wire_label.value}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     _out.mkdir(parents=True, exist_ok=True)
-    _lo, _hi = float(eval_window.value[0]), float(eval_window.value[1])
-
     iv_frame().to_csv(_out / "iv_curves.csv", index=False)
-    asym_frame().to_csv(_out / "asymmetry.csv", index=False)
-
-    pd.DataFrame(
-        [
-            {
-                "wire": wire_label.value,
-                "direction": d,
-                "mode": signal_mode.value,
-                "n_sweeps": r.n_sweeps,
-                "A_mean_pct": 100 * r.a_at(_lo, _hi)[0],
-                "A_sem_pct": 100 * r.a_at(_lo, _hi)[1],
-                "rectification_ratio": r.rr_at(_lo, _hi),
-                "G0_nS": r.g0 / 1e-9,
-                "files": "; ".join(r.files),
-            }
-            for d, r in results.items()
-            if r is not None
-        ]
-    ).to_csv(_out / "summary.csv", index=False)
-
-    pd.DataFrame(
-        [
-            {
-                "wire": wire_label.value,
-                "v_window_lo": mirror.v_window[0],
-                "v_window_hi": mirror.v_window[1],
-                "contrast_pct": 100 * mirror.contrast,
-                "contrast_sem_pct": 100 * mirror.contrast_err,
-                "t_stat": mirror.t_stat,
-                "mirror_score": mirror.mirror_score,
-                "verdict": mirror.verdict(),
-            }
-        ]
-    ).to_csv(_out / "mirror_test.csv", index=False)
 
     mo.callout(mo.md(f"**Exported** → `{_out}`"), kind="success")
     return

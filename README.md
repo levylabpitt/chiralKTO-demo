@@ -17,10 +17,11 @@ First run downloads deps via `uv` (~30s). Do that before the demo.
    voltage left/right (AI channels). Folder = label. Moving to a new wire is
    just retyping the label.
 2. **Measure** — pick a direction, hit **Run IV sweep**. One sweep per click.
-3. **Sweeps / Analysis** — updates on its own.
+3. **Sweeps** — table of what's on disk, pick which sweeps to plot.
+4. **IV curves** — both directions, overlaid, one plot.
 
-Money shot is the asymmetry plot: dashed = −A driving right → left. A chiral
-wire flips sign; an achiral one sits near zero either way.
+No analysis beyond that right now (asymmetry, mirror score, dI/dV) — it's
+still in `chiral_kto/analysis.py` if we want it back later.
 
 ---
 
@@ -51,21 +52,6 @@ files show up under *Unreadable*, nothing else stops.
 
 ---
 
-## What it computes
-
-1. **Branches** — round-trip ramp split into up/down, averaged by default.
-2. **Common grid** — every sweep interpolated onto one bias axis.
-3. **Asymmetry** `A(V) = (|I(+V)| − |I(−V)|) / (|I(+V)| + |I(−V)|)`.
-4. **Contrast** `⟨A_fwd − A_rev⟩` over the eval window, with SEM and t-stat.
-5. **Mirror score** `1 − ‖A_fwd + A_rev‖ / (‖A_fwd‖ + ‖A_rev‖)`. 1 = reverse
-   is exactly −forward. Not a correlation — that reads as noise once A(V)
-   saturates. Penalizes magnitude mismatch too.
-
-Also: mean IV ±1 SD, log |I|, dI/dV. Export writes CSVs to
-`<session>/exports/<wire>_<timestamp>/`.
-
----
-
 ## Trust, but verify
 
 ```bash
@@ -74,8 +60,8 @@ Also: mean IV ±1 SD, log |I|, dI/dV. Export writes CSVs to
 
 19 checks against synthetic data with a known asymmetry — round-tripped
 through TDMS, forward/reverse mirroring, an achiral wire near zero, a weak
-partner scoring partial not perfect. Uses `chiral_kto/simulate.py`, which
-isn't wired into the notebook itself. Run after touching `analysis.py`.
+partner scoring partial not perfect. Tests `chiral_kto/analysis.py`, which
+the notebook doesn't currently use. Run after touching it.
 
 ---
 
@@ -87,7 +73,7 @@ instrument.py          CESession / LockinSweep wrapper
 selftest.py             19 checks, no instrument needed
 chiral_kto/
   ivio.py               read TDMS
-  analysis.py           branches, asymmetry, dI/dV, mirror test
+  analysis.py           branches, asymmetry, dI/dV, mirror test — not wired in yet
   simulate.py           synthetic chiral sweeps as TDMS, for selftest.py
 examples/               original script this was built from
 demo.ps1               launcher: no arg = edit, `present`, `test`
