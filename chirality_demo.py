@@ -39,6 +39,12 @@ def _():
     DIRECTIONS = ("forward", "reverse")
     DIR_LABELS = {"forward": "left → right", "reverse": "right → left"}
     DIR_COLOURS = {"forward": "#d1495b", "reverse": "#0f7bbf"}
+
+    def exp_folder_name(label: str, direction: str) -> str:
+        """The exp_folder string LockinSweep gets - FLEX creates this as a
+        direct child of the session folder and puts the .tdms inside it."""
+        return f"{label}_{direction}"
+
     return (
         DIRECTIONS,
         DIR_COLOURS,
@@ -48,6 +54,7 @@ def _():
         alt,
         analysis,
         datetime,
+        exp_folder_name,
         instrument,
         ivio,
         mo,
@@ -120,6 +127,7 @@ def _(
     cur_left,
     cur_right,
     current_gain,
+    exp_folder_name,
     mo,
     session_dir,
     signal_mode,
@@ -134,8 +142,9 @@ def _(
         return str(raw() if callable(raw) else raw)
 
     root_path = Path(_picked() or session_dir.value.strip().strip('"')).expanduser()
-    wire_dir = root_path / wire_label.value.strip()
-    fwd_dir, rev_dir = wire_dir / "forward", wire_dir / "reverse"
+    _label = wire_label.value.strip()
+    fwd_dir = root_path / exp_folder_name(_label, "forward")
+    rev_dir = root_path / exp_folder_name(_label, "reverse")
     n_f = len(list(fwd_dir.glob("*.tdms"))) if fwd_dir.is_dir() else 0
     n_r = len(list(rev_dir.glob("*.tdms"))) if rev_dir.is_dir() else 0
 
@@ -151,10 +160,13 @@ def _(
                 f"current is sensed on whichever side isn't driving — right's "
                 f"channel when going left → right, left's when going right → left"
             ),
-            mo.md(f"`{wire_dir}` — left → right: {n_f} · right → left: {n_r}"),
+            mo.md(
+                f"`{fwd_dir.name}`: {n_f} · `{rev_dir.name}`: {n_r} "
+                f"— both directly under `{root_path}`"
+            ),
         ]
     )
-    return fwd_dir, rev_dir, root_path, wire_dir
+    return fwd_dir, rev_dir, root_path
 
 
 @app.cell
@@ -243,6 +255,7 @@ def _(
     cur_left,
     cur_right,
     direction,
+    exp_folder_name,
     fwd_dir,
     initial_wait,
     instrument,
@@ -262,7 +275,6 @@ def _(
         _dir = "forward" if direction.value == DIR_LABELS["forward"] else "reverse"
         _drive, _hold = (cur_left.value, cur_right.value) if _dir == "forward" else (cur_right.value, cur_left.value)
         _save_dir = fwd_dir if _dir == "forward" else rev_dir
-        _save_dir.mkdir(parents=True, exist_ok=True)
 
         _config = instrument.build_sweep_config(
             start=float(v_start.value),
@@ -278,7 +290,7 @@ def _(
         try:
             with mo.status.spinner(title=f"IV {direction.value} — {wire_label.value}"):
                 _path = instrument.run_sweep(
-                    exp_folder=f"{wire_label.value}_{_dir}",
+                    exp_folder=exp_folder_name(wire_label.value.strip(), _dir),
                     comments=comments.value,
                     config=_config,
                     hold_channel=_hold,
